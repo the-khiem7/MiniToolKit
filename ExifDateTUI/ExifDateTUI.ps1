@@ -49,25 +49,29 @@ function Show-Header($title) {
 }
 
 # ========================[ BUILT-IN PATTERNS ]========================== #
+# Mỗi pattern có:
+# - Name: mô tả
+# - Rx:   REGEX phải có nhóm tên year,mon,day,hour,minute,second
+# - Offset: số ký tự bỏ ở đầu tên file (ví dụ bỏ "VID"/"IMG_")
 $BuiltInPatterns = @(
   @{ Name="VIDYYYYMMDDhhmmss (ví dụ VID20250105220723)"; 
-     Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2})'; 
-     Offset=3 },
+     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
+     Offset=3 }, # bỏ "VID"
   @{ Name="IMG_YYYYMMDD_HHMMSS (ví dụ IMG_20250105_220723)"; 
-     Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})[_-](?<h>\d{2})(?<m>\d{2})(?<s>\d{2})'; 
-     Offset=4 },
+     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
+     Offset=4 }, # bỏ "IMG_"
   @{ Name="PXL_YYYYMMDD_HHMMSS (ví dụ PXL_20250105_220723)"; 
-     Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})[_-](?<h>\d{2})(?<m>\d{2})(?<s>\d{2})'; 
-     Offset=4 },
+     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
+     Offset=4 }, # bỏ "PXL_"
   @{ Name="YYYY-MM-DD_hh.mm.ss (ví dụ 2025-01-05_22.07.23)";
-     Rx='(?<y>\d{4})[-_](?<M>\d{2})[-_](?<d>\d{2})[_ ](?<h>\d{2})\.(?<m>\d{2})\.(?<s>\d{2})';
+     Rx='(?<year>\d{4})[-_](?<mon>\d{2})[-_](?<day>\d{2})[_ ](?<hour>\d{2})\.(?<minute>\d{2})\.(?<second>\d{2})';
      Offset=0 },
   @{ Name="YYYYMMDD_hhmmss (ví dụ 20250105_220723)";
-     Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})[_-](?<h>\d{2})(?<m>\d{2})(?<s>\d{2})';
+     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
      Offset=0 },
   @{ Name="IMGYYYYMMDDhhmmss (ví dụ IMG20250105220012)";
-     Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2})';
-     Offset=3 }
+     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
+     Offset=3 }  # bỏ "IMG"
 )
 
 # ========================[ CORE: PARSE LOGIC ]========================== #
@@ -85,31 +89,29 @@ function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
   # match regex
   $m = $rx.Match($candidate)
   if ($debugMode) { Write-Host "[DEBUG] Regex: $($rx.ToString()) | Success=$($m.Success)" -ForegroundColor DarkGray }
-
   if (-not $m.Success) { return $null }
 
   try {
-    # lấy từng group một cách an toàn
-    $gy = $m.Groups['y']; $gM = $m.Groups['M']; $gd = $m.Groups['d']
-    $gh = $m.Groups['h']; $gm = $m.Groups['m']; $gs = $m.Groups['s']
+    $gy = $m.Groups['year'];   $gM = $m.Groups['mon'];    $gd = $m.Groups['day']
+    $gh = $m.Groups['hour'];   $gmin = $m.Groups['minute']; $gs = $m.Groups['second']
 
-    if (-not ($gy.Success -and $gM.Success -and $gd.Success -and $gh.Success -and $gm.Success -and $gs.Success)) {
+    if (-not ($gy.Success -and $gM.Success -and $gd.Success -and $gh.Success -and $gmin.Success -and $gs.Success)) {
       if ($debugMode) { Write-Host "[DEBUG] One or more groups missing." -ForegroundColor Red }
       return $null
     }
 
-    $year  = [int]$gy.Value
-    $mon   = [int]$gM.Value
-    $day   = [int]$gd.Value
-    $hour  = [int]$gh.Value
-    $min   = [int]$gm.Value
-    $sec   = [int]$gs.Value
+    $year = [int]$gy.Value
+    $mon  = [int]$gM.Value
+    $day  = [int]$gd.Value
+    $hour = [int]$gh.Value
+    $min  = [int]$gmin.Value
+    $sec  = [int]$gs.Value
 
     if ($debugMode) {
-      Write-Host "[DEBUG] Parsed groups => y=$year M=$mon d=$day h=$hour m=$min s=$sec" -ForegroundColor DarkGray
+      Write-Host "[DEBUG] Parsed groups => year=$year mon=$mon day=$day hour=$hour minute=$min second=$sec" -ForegroundColor DarkGray
     }
 
-    # validate sơ bộ để tránh exception khó hiểu
+    # validate sơ bộ
     if ($mon -lt 1 -or $mon -gt 12 -or $day -lt 1 -or $day -gt 31 -or
         $hour -lt 0 -or $hour -gt 23 -or $min -lt 0 -or $min -gt 59 -or
         $sec -lt 0 -or $sec -gt 59) {
@@ -124,6 +126,7 @@ function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
     return $null
   }
 }
+
 
 # =============================[ MAIN ]================================== #
 try { Test-ExifTool } catch { return }
