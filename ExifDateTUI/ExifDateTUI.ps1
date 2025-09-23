@@ -11,11 +11,15 @@
   - Apply: cập nhật metadata bằng exiftool
   - (Optional) Đồng bộ Windows timestamps (Creation/Modified/Access)
   - Built-in patterns + Custom regex (phải có nhóm tên y,M,d,h,m,s)
+
+  DEBUG:
+  - bật $debugMode = $true để in log chi tiết quá trình parse
 ====================================================================== #>
 
 # ==========================[ GLOBAL SETTINGS ]========================== #
 $ErrorActionPreference = 'Stop'
 $host.UI.RawUI.WindowTitle = "ExifDateTUI — Rename Metadata by Filename"
+$debugMode = $true   # đổi thành $false nếu muốn tắt log debug
 
 # =============================[ HELPERS ]=============================== #
 function Test-ExifTool {
@@ -45,20 +49,16 @@ function Show-Header($title) {
 }
 
 # ========================[ BUILT-IN PATTERNS ]========================== #
-# Mỗi pattern có:
-# - Name: mô tả
-# - Rx:   REGEX phải có nhóm tên y,M,d,h,m,s
-# - Offset: số ký tự bỏ ở đầu tên file (ví dụ bỏ "VID"/"IMG_")
 $BuiltInPatterns = @(
   @{ Name="VIDYYYYMMDDhhmmss (ví dụ VID20250105220723)"; 
      Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2})'; 
-     Offset=3 }, # bỏ "VID"
+     Offset=3 },
   @{ Name="IMG_YYYYMMDD_HHMMSS (ví dụ IMG_20250105_220723)"; 
      Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})[_-](?<h>\d{2})(?<m>\d{2})(?<s>\d{2})'; 
-     Offset=4 }, # bỏ "IMG_"
+     Offset=4 },
   @{ Name="PXL_YYYYMMDD_HHMMSS (ví dụ PXL_20250105_220723)"; 
      Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})[_-](?<h>\d{2})(?<m>\d{2})(?<s>\d{2})'; 
-     Offset=4 }, # bỏ "PXL_"
+     Offset=4 },
   @{ Name="YYYY-MM-DD_hh.mm.ss (ví dụ 2025-01-05_22.07.23)";
      Rx='(?<y>\d{4})[-_](?<M>\d{2})[-_](?<d>\d{2})[_ ](?<h>\d{2})\.(?<m>\d{2})\.(?<s>\d{2})';
      Offset=0 },
@@ -67,30 +67,67 @@ $BuiltInPatterns = @(
      Offset=0 },
   @{ Name="IMGYYYYMMDDhhmmss (ví dụ IMG20250105220012)";
      Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2})';
-     Offset=3 }  # bỏ "IMG"
+     Offset=3 }
 )
 
 # ========================[ CORE: PARSE LOGIC ]========================== #
 function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
-  # Nếu có offset (bỏ prefix như VID/IMG/PXL), cắt phía trước
-  $s = if ($offset -gt 0 -and $nameNoExt.Length -gt $offset) { $nameNoExt.Substring($offset) } else { $nameNoExt }
-  $m = $rx.Match($s)
+  if ($debugMode) { Write-Host "[DEBUG] Original name: $nameNoExt" -ForegroundColor DarkGray }
+
+  # cắt prefix theo offset (VID/IMG/PXL...)
+  $candidate = if ($offset -gt 0 -and $nameNoExt.Length -gt $offset) { 
+    $nameNoExt.Substring($offset) 
+  } else { 
+    $nameNoExt 
+  }
+  if ($debugMode) { Write-Host "[DEBUG] After offset($offset): $candidate" -ForegroundColor DarkGray }
+
+  # match regex
+  $m = $rx.Match($candidate)
+  if ($debugMode) { Write-Host "[DEBUG] Regex: $($rx.ToString()) | Success=$($m.Success)" -ForegroundColor DarkGray }
+
   if (-not $m.Success) { return $null }
+
   try {
-    $y  = [int]$m.Groups['y'].Value
-    $M  = [int]$m.Groups['M'].Value
-    $d  = [int]$m.Groups['d'].Value
-    $h  = [int]$m.Groups['h'].Value
-    $mi = [int]$m.Groups['m'].Value
-    $s  = [int]$m.Groups['s'].Value
-    return Get-Date -Year $y -Month $M -Day $d -Hour $h -Minute $mi -Second $s
-  } catch { return $null }
+    # lấy từng group một cách an toàn
+    $gy = $m.Groups['y']; $gM = $m.Groups['M']; $gd = $m.Groups['d']
+    $gh = $m.Groups['h']; $gm = $m.Groups['m']; $gs = $m.Groups['s']
+
+    if (-not ($gy.Success -and $gM.Success -and $gd.Success -and $gh.Success -and $gm.Success -and $gs.Success)) {
+      if ($debugMode) { Write-Host "[DEBUG] One or more groups missing." -ForegroundColor Red }
+      return $null
+    }
+
+    $year  = [int]$gy.Value
+    $mon   = [int]$gM.Value
+    $day   = [int]$gd.Value
+    $hour  = [int]$gh.Value
+    $min   = [int]$gm.Value
+    $sec   = [int]$gs.Value
+
+    if ($debugMode) {
+      Write-Host "[DEBUG] Parsed groups => y=$year M=$mon d=$day h=$hour m=$min s=$sec" -ForegroundColor DarkGray
+    }
+
+    # validate sơ bộ để tránh exception khó hiểu
+    if ($mon -lt 1 -or $mon -gt 12 -or $day -lt 1 -or $day -gt 31 -or
+        $hour -lt 0 -or $hour -gt 23 -or $min -lt 0 -or $min -gt 59 -or
+        $sec -lt 0 -or $sec -gt 59) {
+      if ($debugMode) { Write-Host "[DEBUG] Invalid date/time range." -ForegroundColor Red }
+      return $null
+    }
+
+    return Get-Date -Year $year -Month $mon -Day $day -Hour $hour -Minute $min -Second $sec
+  }
+  catch {
+    if ($debugMode) { Write-Host "[DEBUG] Exception while parsing: $($_.Exception.Message)" -ForegroundColor Red }
+    return $null
+  }
 }
 
 # =============================[ MAIN ]================================== #
 try { Test-ExifTool } catch { return }
 
-# ---- Input: Where to scan ----
 Show-Header "Chọn thư mục nguồn"
 $path = Ask "Path thư mục (Enter = current)" (Get-Location).Path
 if ([string]::IsNullOrWhiteSpace($path)) { $path = (Get-Location).Path }
@@ -101,7 +138,6 @@ $setFs       = AskYesNo "Đồng bộ luôn Windows timestamps (Creation/Modifie
 $extInput    = Ask "Phần mở rộng cần xử lý (ví dụ: mp4,jpg,heic; Enter = mặc định mp4,jpg,jpeg,png,heic)" "mp4,jpg,jpeg,png,heic"
 $exts        = $extInput.Split(",") | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ }
 
-# ---- Choose pattern ----
 Show-Header "Chọn pattern để parse thời gian từ tên"
 for ($i=0; $i -lt $BuiltInPatterns.Count; $i++) {
   "{0}. {1}" -f ($i+1), $BuiltInPatterns[$i].Name | Write-Host
@@ -122,10 +158,17 @@ if ($choice -match '^[cC]$') {
   $offset = [int]$($BuiltInPatterns[$idx].Offset)
 }
 
-# ---- Scan & preview ----
 Show-Header "Quét & Preview"
 $files = Get-ChildItem -LiteralPath $path -File -Recurse:$recurse -ErrorAction SilentlyContinue `
   | Where-Object { $exts -contains $_.Extension.TrimStart('.').ToLower() }
+
+if ($debugMode) {
+  Write-Host "[DEBUG] Extensions filter: $($exts -join ', ')" -ForegroundColor DarkGray
+  foreach($ff in $files) {
+    $ext = $ff.Extension.TrimStart('.')
+    Write-Host "[DEBUG] Found: $($ff.Name) | ext=$ext" -ForegroundColor DarkGray
+  }
+}
 
 if (-not $files) { Write-Host "[!] Không tìm thấy file phù hợp." -ForegroundColor Yellow; return }
 
@@ -139,7 +182,7 @@ foreach ($f in $files) {
   }
 }
 
-# ---- Show first N rows ----
+# Preview list
 $take = [Math]::Min(20, $preview.Count)
 if ($take -gt 0) {
   $preview[0..($take-1)] |
@@ -148,7 +191,7 @@ if ($take -gt 0) {
     | Format-Table -AutoSize
 }
 
-# ---- Stats (OK vs No-match) ----
+# Stats
 $ok   = $preview | Where-Object { $_.Parsed }
 $fail = $preview | Where-Object { -not $_.Parsed }
 $okCount = $ok.Count
@@ -157,24 +200,21 @@ Write-Host "`nTổng: $($preview.Count) | Parse OK: $okCount | Không match: $no
 
 if ($okCount -eq 0) { Write-Host "[!] Không có file nào parse được. Dừng." -ForegroundColor Red; return }
 
-# ---- Confirm apply ----
 $confirm = AskYesNo "Tiến hành cập nhật metadata bằng exiftool cho $okCount file?" $true
 if (-not $confirm) { Write-Host "Đã hủy."; return }
 
-# ---- Apply metadata (and optional filesystem timestamps) ----
 Show-Header "Đang cập nhật metadata (exiftool)…"
 $updated = 0
 foreach ($row in $ok) {
-  $tsExif = (Format-Dt $row.Parsed) # yyyy:MM:dd HH:mm:ss
+  $tsExif = (Format-Dt $row.Parsed)
+  if ($debugMode) { Write-Host "[DEBUG] Applying timestamp $tsExif to $($row.File)" -ForegroundColor DarkGray }
   try {
-    # exiftool: cập nhật nhiều tag thời gian thường dùng
     & exiftool -overwrite_original -quiet `
       ("-AllDates=$tsExif") `
       ("-MediaCreateDate=$tsExif") `
       ("-TrackCreateDate=$tsExif") `
       ("-TrackModifyDate=$tsExif") `
       ("-FileModifyDate=$tsExif") `
-      --ext lnk --ext url --ext json --ext xmp --ext srt --ext ass --ext txt --ext ini `
       $row.File | Out-Null
 
     if ($setFs) {
@@ -182,6 +222,7 @@ foreach ($row in $ok) {
       $it.CreationTime   = $row.Parsed
       $it.LastWriteTime  = $row.Parsed
       $it.LastAccessTime = $row.Parsed
+      if ($debugMode) { Write-Host "[DEBUG] Updated filesystem timestamps" -ForegroundColor DarkGray }
     }
     $updated++
     Write-Host "[OK] $($row.File)" -ForegroundColor Green
@@ -190,7 +231,6 @@ foreach ($row in $ok) {
   }
 }
 
-# ---- Summary ----
 Show-Header "Hoàn tất"
 Write-Host "Đã cập nhật: $updated / $okCount file parse-được."
 if ($noMatch -gt 0) {
