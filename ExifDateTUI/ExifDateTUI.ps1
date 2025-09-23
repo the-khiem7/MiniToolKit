@@ -44,7 +44,10 @@ $BuiltInPatterns = @(
      Offset=0 },
   @{ Name="YYYYMMDD_hhmmss (ví dụ 20250105_220723)";
      Rx='(?<y>\d{4})(?<M>\d{2})(?<d>\d{2})[_-](?<h>\d{2})(?<m>\d{2})(?<s>\d{2})';
-     Offset=0 }
+     Offset=0 },
+  @{ Name="IMGYYYYMMDDhhmmss (ví dụ IMG20250105220012)";
+     Rx='(?<y>\d{4})(?<M>\d{2})(?<d>{2})(?<h>{2})(?<m>{2})(?<s>{2})' -replace '{2}','\d{2}';
+     Offset=3 }
 )
 
 function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
@@ -120,8 +123,11 @@ $take = [Math]::Min(20, $preview.Count)
 $preview[0..($take-1)] | Select-Object @{n="File";e={Split-Path $_.File -Leaf}}, @{n="Parsed";e={ if($_.Parsed){$_.Parsed.ToString("yyyy-MM-dd HH:mm:ss")} else {"(no-match)"} }} `
   | Format-Table -AutoSize
 
-$noMatch = ($preview | Where-Object { -not $_.Parsed }).Count
-$okCount = $preview.Count - $noMatch
+$ok   = $preview | Where-Object { $_.Parsed }
+$fail = $preview | Where-Object { -not $_.Parsed }
+$okCount = $ok.Count
+$noMatch = $fail.Count
+
 Write-Host "`nTổng: $($preview.Count) | Parse OK: $okCount | Không match: $noMatch"
 
 if ($okCount -eq 0) { Write-Host "[!] Không có file nào parse được. Dừng." -ForegroundColor Red; return }
