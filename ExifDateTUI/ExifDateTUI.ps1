@@ -106,9 +106,12 @@ function AutoDetect-DatePattern($nameNoExt, $patterns) {
     } else {
       $nameNoExt
     }
+    if ($debugMode) { Write-Host ("[DEBUG] Try pattern: {0} | Offset={1} | Candidate='{2}' | Regex='{3}'" -f $pat.Name, $offset, $candidate, $rx.ToString()) -ForegroundColor DarkGray }
     $m = $rx.Match($candidate)
-    if ($m.Success) { return $pat }
+    if ($debugMode) { Write-Host ("[DEBUG] Match result: Success={0}" -f $m.Success) -ForegroundColor DarkGray }
+    if ($m.Success) { if ($debugMode) { Write-Host ("[DEBUG] >>> Matched pattern: {0}" -f $pat.Name) -ForegroundColor Green }; return $pat }
   }
+  if ($debugMode) { Write-Host "[DEBUG] >>> No pattern matched!" -ForegroundColor Red }
   return $null
 }
 function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
@@ -197,10 +200,13 @@ if (-not $files) { Write-Host "[!] Không tìm thấy file phù hợp." -Foregro
 $preview = @()
 
 foreach ($f in $files) {
+  if ($debugMode) { Write-Host "[DEBUG] Preview: $($f.Name)" -ForegroundColor DarkGray }
   $nameNoExt = [IO.Path]::GetFileNameWithoutExtension($f.Name)
   $pat = AutoDetect-DatePattern $nameNoExt $BuiltInPatterns
   if ($pat) {
+  if ($debugMode) { Write-Host "[DEBUG] Matched pattern: $($pat.Name)" -ForegroundColor DarkGray }
     $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx ([regex]$pat.Rx) -offset ([int]$pat.Offset)
+  if ($debugMode) { Write-Host "[DEBUG] Parse-DateFromName result: $dt" -ForegroundColor DarkGray }
     $preview += [pscustomobject]@{
       File   = $f.FullName
       Parsed = if ($dt) { $dt } else { $null }
@@ -259,9 +265,12 @@ if (-not $confirm) { Write-Host "Đã hủy."; return }
 Show-Header "Đang cập nhật metadata (exiftool)…"
 $updated = 0
 foreach ($row in $ok) {
+  if ($debugMode) { Write-Host "[DEBUG] Update metadata for: $($row.File)" -ForegroundColor DarkGray }
   $nameNoExt = [IO.Path]::GetFileNameWithoutExtension($row.File)
   $pat = AutoDetect-DatePattern $nameNoExt $BuiltInPatterns
+    if ($debugMode) { Write-Host "[DEBUG] Detected pattern for update: $($pat.Name)" -ForegroundColor DarkGray }
   if ($pat) {
+    if ($debugMode) { Write-Host "[DEBUG] Parse-DateFromName for update: $dt" -ForegroundColor DarkGray }
     $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx ([regex]$pat.Rx) -offset ([int]$pat.Offset)
     $tsExif = (Format-Dt $dt)
     if ($debugMode) { Write-Host "[DEBUG] Applying timestamp $tsExif to $($row.File)" -ForegroundColor DarkGray }
