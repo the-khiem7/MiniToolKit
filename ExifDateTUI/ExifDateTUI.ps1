@@ -56,7 +56,14 @@ function Ask($msg, $default="") {
 
 function AskYesNo($msg, $default=$true) {
   $def = if ($default) { "Y/n" } else { "y/N" }
-  $ans = Read-Host "$msg ($def)"
+  # Only add (Y/n) if not present
+  if ($msg -match "\(Y/n\)$" -or $msg -match "\(y/N\)$") {
+    $prompt = $msg
+  } else {
+    $prompt = "$msg ($def)"
+  }
+  if ($global:debugMode) { Write-Host "[DEBUG] AskYesNo prompt: '$prompt'" -ForegroundColor DarkGray }
+  $ans = Read-Host $prompt
   if ([string]::IsNullOrWhiteSpace($ans)) { return $default }
   return @("y","yes","1","true","t") -contains ($ans.ToLower())
 }
@@ -68,6 +75,29 @@ function Show-Header($title) {
   Write-Host "┌$line┐" -ForegroundColor Cyan
   Write-Host ("│    $title    │") -ForegroundColor Cyan
   Write-Host "└$line┘" -ForegroundColor Cyan
+}
+
+# Helper: Show a single-line box for a message
+function Show-BoxMessage($msg, $fg='White') {
+  $width = $msg.Length + 4
+  $line = '─' * ($width-2)
+  Write-Host "┌$line┐" -ForegroundColor $fg
+  Write-Host ("│ $msg │") -ForegroundColor $fg
+  Write-Host "└$line┘" -ForegroundColor $fg
+}
+
+function Get-BoxTop($width, $fg) {
+  $line = '─' * ($width-2)
+  return @{ str = "┌$line┐"; fg = $fg }
+}
+function Get-BoxMiddle($text, $width, $fg) {
+  $padLen = $width-2
+  $padText = $text.PadLeft([int](($padLen+$text.Length)/2)).PadRight($padLen)
+  return @{ str = "│$padText│"; fg = $fg }
+}
+function Get-BoxBottom($width, $fg) {
+  $line = '─' * ($width-2)
+  return @{ str = "└$line┘"; fg = $fg }
 }
 
 # ========================[ BUILT-IN PATTERNS ]========================== #
@@ -260,17 +290,59 @@ if ($take -gt 0) {
 
 # Stats
 $ok   = $preview | Where-Object { $_.Parsed }
+
 $fail = $preview | Where-Object { -not $_.Parsed }
 $okCount = $ok.Count
 $noMatch = $fail.Count
-Write-Host "`nTổng: $($preview.Count) | Parse OK: $okCount | Không match: $noMatch"
-Write-Host ("Tổng: $($preview.Count)") -ForegroundColor Cyan
-Write-Host ("Parse OK: $okCount") -ForegroundColor Green
-Write-Host ("Không match: $noMatch") -ForegroundColor Yellow
+
+# Show summary stats in three separate boxes with new labels
+$box1 = "TOTAL: $($preview.Count)"
+
+$box2 = "OK: $okCount"
+$box3 = "NO-MATCH: $noMatch"
+$w1 = 12; $w2 = 14; $w3 = 16
+Write-Host ""
+# Build arrays correctly
+$tops = @()
+$tops += Get-BoxTop $w1 'Cyan'
+$tops += Get-BoxTop $w2 'Green'
+$tops += Get-BoxTop $w3 'Yellow'
+$mids = @()
+$mids += Get-BoxMiddle $box1 $w1 'Cyan'
+$mids += Get-BoxMiddle $box2 $w2 'Green'
+$mids += Get-BoxMiddle $box3 $w3 'Yellow'
+$bots = @()
+$bots += Get-BoxBottom $w1 'Cyan'
+$bots += Get-BoxBottom $w2 'Green'
+$bots += Get-BoxBottom $w3 'Yellow'
+
+# Print all tops in one line
+for ($i=0; $i -lt $tops.Count; $i++) {
+  Write-Host $tops[$i].str -ForegroundColor $tops[$i].fg -NoNewline
+  Write-Host " " -NoNewline
+}
+Write-Host ""
+# Print all middles in one line
+for ($i=0; $i -lt $mids.Count; $i++) {
+  Write-Host $mids[$i].str -ForegroundColor $mids[$i].fg -NoNewline
+  Write-Host " " -NoNewline
+}
+Write-Host ""
+# Print all bottoms in one line
+for ($i=0; $i -lt $bots.Count; $i++) {
+  Write-Host $bots[$i].str -ForegroundColor $bots[$i].fg -NoNewline
+  Write-Host " " -NoNewline
+}
+Write-Host ""
+
 
 if ($okCount -eq 0) { Write-Host "[!] Không có file nào parse được. Dừng." -ForegroundColor Red; return }
 
-$confirm = AskYesNo "Tiến hành cập nhật metadata bằng exiftool cho $okCount file?" $true
+# Show confirmation box UI (no Y/n)
+$confirmMsg = "Tiến hành cập nhật metadata bằng exiftool cho $okCount file?"
+Show-BoxMessage $confirmMsg 'Magenta'
+Write-Host '(Y/n):' -ForegroundColor Magenta
+$confirm = AskYesNo ' ' $true
 if (-not $confirm) { Write-Host "Đã hủy."; return }
 
 Show-Header "Đang cập nhật metadata (exiftool)…"
