@@ -64,7 +64,10 @@ function AskYesNo($msg, $default=$true) {
 function Format-Dt($dt) { $dt.ToString("yyyy:MM:dd HH:mm:ss") }
 
 function Show-Header($title) {
-  Write-Host "`n=== $title ===" -ForegroundColor Cyan
+  $line = '─' * ($title.Length + 8)
+  Write-Host "┌$line┐" -ForegroundColor Cyan
+  Write-Host ("│    $title    │") -ForegroundColor Cyan
+  Write-Host "└$line┘" -ForegroundColor Cyan
 }
 
 # ========================[ BUILT-IN PATTERNS ]========================== #
@@ -151,13 +154,14 @@ function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
 try { Test-ExifTool } catch { return }
 
 Show-Header "Chọn thư mục nguồn"
-$path = Ask "Path thư mục (Enter = current)" (Get-Location).Path
+
+$path = Ask "📁 Path thư mục (Enter = current)" (Get-Location).Path
 if ([string]::IsNullOrWhiteSpace($path)) { $path = (Get-Location).Path }
 if (-not (Test-Path -LiteralPath $path)) { Write-Host "[!] Path không tồn tại." -ForegroundColor Red; return }
 
-$recurse     = AskYesNo "Quét đệ quy subfolders?" $true
-$setFs       = AskYesNo "Đồng bộ luôn Windows timestamps (Creation/Modified/Access)?" $true
-$extInput    = Ask "Phần mở rộng cần xử lý (ví dụ: mp4,jpg,heic; Enter = mặc định mp4,jpg,jpeg,png,heic)" "mp4,jpg,jpeg,png,heic"
+$recurse     = AskYesNo "🔄 Quét đệ quy subfolders?" $true
+$setFs       = AskYesNo "🕒 Đồng bộ luôn Windows timestamps (Creation/Modified/Access)?" $true
+$extInput    = Ask "🗂️ Phần mở rộng cần xử lý (ví dụ: mp4,jpg,heic; Enter = mặc định mp4,jpg,jpeg,png,heic)" "mp4,jpg,jpeg,png,heic"
 $exts        = $extInput.Split(",") | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ }
 
 Show-Header "Chọn pattern để parse thời gian từ tên"
@@ -168,13 +172,18 @@ $sortedPatterns = $BuiltInPatterns | Sort-Object Name
 $patternTable = $sortedPatterns | ForEach-Object {
   [PSCustomObject]@{
     STT = ($sortedPatterns.IndexOf($_) + 1)
-    MôTả = $_.Name
-    VíDụ = $_.Example
-    Offset = $_.Offset
-    Regex = $_.Rx
+    MôTả = $_.Name.PadRight(22)
+    VíDụ = $_.Example.PadRight(18)
   }
 }
-$patternTable | Format-Table STT, MôTả, VíDụ -AutoSize
+# Vẽ bảng pattern với phân cách
+Write-Host "┌────┬───────────────────────┬────────────────────┐" -ForegroundColor Yellow
+Write-Host "│ STT│ MôTả                  │ VíDụ               │" -ForegroundColor Yellow
+Write-Host "├────┼───────────────────────┼────────────────────┤" -ForegroundColor Yellow
+foreach ($row in $patternTable) {
+  Write-Host ("│ {0,-3}│ {1}│ {2}│" -f $row.STT, $row.MôTả, $row.VíDụ) -ForegroundColor White
+}
+Write-Host "└────┴───────────────────────┴────────────────────┘" -ForegroundColor Yellow
 Write-Host "C. Custom regex (phải có nhóm tên: y,M,d,h,m,s)" -ForegroundColor Yellow
 $choice = Ask "Chọn STT pattern hoặc C cho custom" "1"
 
@@ -218,10 +227,16 @@ foreach ($f in $files) {
 # Preview list
 $take = [Math]::Min(20, $preview.Count)
 if ($take -gt 0) {
-  $preview[0..($take-1)] |
-    Select-Object @{n="File";e={Split-Path $_.File -Leaf}},
-                  @{n="Parsed";e={ if($_.Parsed){$_.Parsed.ToString("yyyy-MM-dd HH:mm:ss")} else {"(no-match)"} }} `
-    | Format-Table -AutoSize
+  Write-Host "\nPreview kết quả parse:" -ForegroundColor Cyan
+  Write-Host "┌───────────────────────────────┬───────────────────────┐" -ForegroundColor Yellow
+  Write-Host "│ File                          │ Parsed                │" -ForegroundColor Yellow
+  Write-Host "├───────────────────────────────┼───────────────────────┤" -ForegroundColor Yellow
+  foreach ($row in $preview[0..($take-1)]) {
+    $file = Split-Path $row.File -Leaf
+    $parsed = if ($row.Parsed) { $row.Parsed.ToString("yyyy-MM-dd HH:mm:ss") } else { "❌ no-match" }
+    Write-Host ("│ {0,-28} │ {1,-21} │" -f $file, $parsed) -ForegroundColor White
+  }
+  Write-Host "└───────────────────────────────┴───────────────────────┘" -ForegroundColor Yellow
 }
 
 # Stats
@@ -230,6 +245,9 @@ $fail = $preview | Where-Object { -not $_.Parsed }
 $okCount = $ok.Count
 $noMatch = $fail.Count
 Write-Host "`nTổng: $($preview.Count) | Parse OK: $okCount | Không match: $noMatch"
+Write-Host ("Tổng: $($preview.Count)") -ForegroundColor Cyan
+Write-Host ("Parse OK: $okCount") -ForegroundColor Green
+Write-Host ("Không match: $noMatch") -ForegroundColor Yellow
 
 if ($okCount -eq 0) { Write-Host "[!] Không có file nào parse được. Dừng." -ForegroundColor Red; return }
 
@@ -258,9 +276,9 @@ foreach ($row in $ok) {
       if ($debugMode) { Write-Host "[DEBUG] Updated filesystem timestamps" -ForegroundColor DarkGray }
     }
     $updated++
-    Write-Host "[OK] $($row.File)" -ForegroundColor Green
+    Write-Host ("✔ $($row.File)") -ForegroundColor Green
   } catch {
-    Write-Host "[FAIL] $($row.File) — $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ("✗ $($row.File) — $($_.Exception.Message)") -ForegroundColor Red
   }
 }
 
