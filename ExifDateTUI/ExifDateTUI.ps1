@@ -73,24 +73,24 @@ function Show-Header($title) {
 # - Rx:   REGEX phải có nhóm tên year,mon,day,hour,minute,second
 # - Offset: số ký tự bỏ ở đầu tên file (ví dụ bỏ "VID"/"IMG_")
 $BuiltInPatterns = @(
-  @{ Name="VIDYYYYMMDDhhmmss (ví dụ VID20250105220723)"; 
-     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
-     Offset=3 }, # bỏ "VID"
-  @{ Name="IMG_YYYYMMDD_HHMMSS (ví dụ IMG_20250105_220723)"; 
-     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
-     Offset=4 }, # bỏ "IMG_"
-  @{ Name="PXL_YYYYMMDD_HHMMSS (ví dụ PXL_20250105_220723)"; 
-     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
-     Offset=4 }, # bỏ "PXL_"
-  @{ Name="YYYY-MM-DD_hh.mm.ss (ví dụ 2025-01-05_22.07.23)";
-     Rx='(?<year>\d{4})[-_](?<mon>\d{2})[-_](?<day>\d{2})[_ ](?<hour>\d{2})\.(?<minute>\d{2})\.(?<second>\d{2})';
-     Offset=0 },
-  @{ Name="YYYYMMDD_hhmmss (ví dụ 20250105_220723)";
-     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
-     Offset=0 },
-  @{ Name="IMGYYYYMMDDhhmmss (ví dụ IMG20250105220012)";
-     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
-     Offset=3 }  # bỏ "IMG"
+  @{ Name="VIDYYYYMMDDhhmmss"; Example="VID20250105220723";
+    Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
+    Offset=3 }, # bỏ "VID"
+  @{ Name="IMG_YYYYMMDD_HHMMSS"; Example="IMG_20250105_220723";
+    Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
+    Offset=4 }, # bỏ "IMG_"
+  @{ Name="PXL_YYYYMMDD_HHMMSS"; Example="PXL_20250105_220723";
+    Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})'; 
+    Offset=4 }, # bỏ "PXL_"
+  @{ Name="YYYY-MM-DD_hh.mm.ss"; Example="2025-01-05_22.07.23";
+    Rx='(?<year>\d{4})[-_](?<mon>\d{2})[-_](?<day>\d{2})[_ ](?<hour>\d{2})\.(?<minute>\d{2})\.(?<second>\d{2})';
+    Offset=0 },
+  @{ Name="YYYYMMDD_hhmmss"; Example="20250105_220723";
+    Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})[_-](?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
+    Offset=0 },
+  @{ Name="IMGYYYYMMDDhhmmss"; Example="IMG20250105220012";
+    Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
+    Offset=3 }  # bỏ "IMG"
 )
 
 # ========================[ CORE: PARSE LOGIC ]========================== #
@@ -161,23 +161,34 @@ $extInput    = Ask "Phần mở rộng cần xử lý (ví dụ: mp4,jpg,heic; E
 $exts        = $extInput.Split(",") | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ }
 
 Show-Header "Chọn pattern để parse thời gian từ tên"
-for ($i=0; $i -lt $BuiltInPatterns.Count; $i++) {
-  "{0}. {1}" -f ($i+1), $BuiltInPatterns[$i].Name | Write-Host
+
+# Sắp xếp patterns theo tên cho dễ nhìn
+
+$sortedPatterns = $BuiltInPatterns | Sort-Object Name
+$patternTable = $sortedPatterns | ForEach-Object {
+  [PSCustomObject]@{
+    STT = ($sortedPatterns.IndexOf($_) + 1)
+    MôTả = $_.Name
+    VíDụ = $_.Example
+    Offset = $_.Offset
+    Regex = $_.Rx
+  }
 }
+$patternTable | Format-Table STT, MôTả, VíDụ -AutoSize
 Write-Host "C. Custom regex (phải có nhóm tên: y,M,d,h,m,s)" -ForegroundColor Yellow
-$choice = Ask "Chọn (1..$($BuiltInPatterns.Count) hoặc C)" "1"
+$choice = Ask "Chọn STT pattern hoặc C cho custom" "1"
 
 $rx = $null; $offset = 0
 if ($choice -match '^[cC]$') {
-  $rxText  = Ask "Nhập regex (ví dụ: (?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2}))" 
-  if ([string]::IsNullOrWhiteSpace($rxText)) { Write-Host "[!] Regex rỗng." -ForegroundColor Red; return }
-  try { $rx = [regex]$rxText } catch { Write-Host "[!] Regex không hợp lệ." -ForegroundColor Red; return }
-  $offset = [int](Ask "Offset ký tự cần bỏ đầu tên file (số nguyên, Enter=0)" "0")
+    $rxText  = Ask "Nhập regex (ví dụ: (?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2}))" 
+    if ([string]::IsNullOrWhiteSpace($rxText)) { Write-Host "[!] Regex rỗng." -ForegroundColor Red; return }
+    try { $rx = [regex]$rxText } catch { Write-Host "[!] Regex không hợp lệ." -ForegroundColor Red; return }
+    $offset = [int](Ask "Offset ký tự cần bỏ đầu tên file (số nguyên, Enter=0)" "0")
 } else {
-  $idx = [int]$choice - 1
-  if ($idx -lt 0 -or $idx -ge $BuiltInPatterns.Count) { Write-Host "[!] Lựa chọn không hợp lệ." -ForegroundColor Red; return }
-  $rx     = [regex]$($BuiltInPatterns[$idx].Rx)
-  $offset = [int]$($BuiltInPatterns[$idx].Offset)
+    $idx = [int]$choice - 1
+    if ($idx -lt 0 -or $idx -ge $sortedPatterns.Count) { Write-Host "[!] Lựa chọn không hợp lệ." -ForegroundColor Red; return }
+    $rx     = [regex]$($sortedPatterns[$idx].Rx)
+    $offset = [int]$($sortedPatterns[$idx].Offset)
 }
 
 Show-Header "Quét & Preview"
