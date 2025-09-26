@@ -1,0 +1,21 @@
+# To ignore media files only in a specific folder, e.g., 'media/'
+media/*.jpg
+media/*.jpeg
+media/*.png
+media/*.heic
+media/*.mp4
+media/*.mov
+media/*.avi
+media/*.mkv
+media/*.webm
+media/*.gif
+media/*.bmp
+media/*.tiff
+media/*.wav
+media/*.mp3
+media/*.aac
+media/*.flac
+media/*.ogg
+media/*.3gp
+media/*.mpg
+media/*.mpeg
