@@ -97,6 +97,20 @@ $BuiltInPatterns = @(
 )
 
 # ========================[ CORE: PARSE LOGIC ]========================== #
+function AutoDetect-DatePattern($nameNoExt, $patterns) {
+  foreach ($pat in $patterns) {
+    $rx = [regex]$pat.Rx
+    $offset = [int]$pat.Offset
+    $candidate = if ($offset -gt 0 -and $nameNoExt.Length -gt $offset) {
+      $nameNoExt.Substring($offset)
+    } else {
+      $nameNoExt
+    }
+    $m = $rx.Match($candidate)
+    if ($m.Success) { return $pat }
+  }
+  return $null
+}
 function Parse-DateFromName($nameNoExt, [regex]$rx, [int]$offset=0) {
   if ($debugMode) { Write-Host "[DEBUG] Original name: $nameNoExt" -ForegroundColor DarkGray }
 
@@ -164,41 +178,7 @@ $setFs       = AskYesNo "🕒 Đồng bộ luôn Windows timestamps (Creation/Mo
 $extInput    = Ask "🗂️ Phần mở rộng cần xử lý (ví dụ: mp4,jpg,heic; Enter = mặc định mp4,jpg,jpeg,png,heic)" "mp4,jpg,jpeg,png,heic"
 $exts        = $extInput.Split(",") | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ }
 
-Show-Header "Chọn pattern để parse thời gian từ tên"
 
-# Sắp xếp patterns theo tên cho dễ nhìn
-
-$sortedPatterns = $BuiltInPatterns | Sort-Object Name
-$patternTable = $sortedPatterns | ForEach-Object {
-  [PSCustomObject]@{
-    STT = ($sortedPatterns.IndexOf($_) + 1)
-    MôTả = $_.Name.PadRight(22)
-    VíDụ = $_.Example.PadRight(18)
-  }
-}
-# Vẽ bảng pattern với phân cách
-Write-Host "┌────┬───────────────────────┬────────────────────┐" -ForegroundColor Yellow
-Write-Host "│ STT│ MôTả                  │ VíDụ               │" -ForegroundColor Yellow
-Write-Host "├────┼───────────────────────┼────────────────────┤" -ForegroundColor Yellow
-foreach ($row in $patternTable) {
-  Write-Host ("│ {0,-3}│ {1}│ {2}│" -f $row.STT, $row.MôTả, $row.VíDụ) -ForegroundColor White
-}
-Write-Host "└────┴───────────────────────┴────────────────────┘" -ForegroundColor Yellow
-Write-Host "C. Custom regex (phải có nhóm tên: y,M,d,h,m,s)" -ForegroundColor Yellow
-$choice = Ask "Chọn STT pattern hoặc C cho custom" "1"
-
-$rx = $null; $offset = 0
-if ($choice -match '^[cC]$') {
-    $rxText  = Ask "Nhập regex (ví dụ: (?<y>\d{4})(?<M>\d{2})(?<d>\d{2})(?<h>\d{2})(?<m>\d{2})(?<s>\d{2}))" 
-    if ([string]::IsNullOrWhiteSpace($rxText)) { Write-Host "[!] Regex rỗng." -ForegroundColor Red; return }
-    try { $rx = [regex]$rxText } catch { Write-Host "[!] Regex không hợp lệ." -ForegroundColor Red; return }
-    $offset = [int](Ask "Offset ký tự cần bỏ đầu tên file (số nguyên, Enter=0)" "0")
-} else {
-    $idx = [int]$choice - 1
-    if ($idx -lt 0 -or $idx -ge $sortedPatterns.Count) { Write-Host "[!] Lựa chọn không hợp lệ." -ForegroundColor Red; return }
-    $rx     = [regex]$($sortedPatterns[$idx].Rx)
-    $offset = [int]$($sortedPatterns[$idx].Offset)
-}
 
 Show-Header "Quét & Preview"
 $files = Get-ChildItem -LiteralPath $path -File -Recurse:$recurse -ErrorAction SilentlyContinue `
@@ -215,28 +195,50 @@ if ($debugMode) {
 if (-not $files) { Write-Host "[!] Không tìm thấy file phù hợp." -ForegroundColor Yellow; return }
 
 $preview = @()
+
 foreach ($f in $files) {
   $nameNoExt = [IO.Path]::GetFileNameWithoutExtension($f.Name)
-  $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx $rx -offset $offset
-  $preview += [pscustomobject]@{
-    File   = $f.FullName
-    Parsed = if ($dt) { $dt } else { $null }
+  $pat = AutoDetect-DatePattern $nameNoExt $BuiltInPatterns
+  if ($pat) {
+    $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx ([regex]$pat.Rx) -offset ([int]$pat.Offset)
+    $preview += [pscustomobject]@{
+      File   = $f.FullName
+      Parsed = if ($dt) { $dt } else { $null }
+      Pattern = $pat.Name
+    }
+  } else {
+    $preview += [pscustomobject]@{
+      File   = $f.FullName
+      Parsed = $null
+      Pattern = "(no pattern)"
+    }
   }
 }
 
 # Preview list
-$take = [Math]::Min(20, $preview.Count)
+
+$take = [Math]::Min(20, $files.Count)
 if ($take -gt 0) {
   Write-Host "\nPreview kết quả parse:" -ForegroundColor Cyan
-  Write-Host "┌───────────────────────────────┬───────────────────────┐" -ForegroundColor Yellow
-  Write-Host "│ File                          │ Parsed                │" -ForegroundColor Yellow
-  Write-Host "├───────────────────────────────┼───────────────────────┤" -ForegroundColor Yellow
-  foreach ($row in $preview[0..($take-1)]) {
-    $file = Split-Path $row.File -Leaf
-    $parsed = if ($row.Parsed) { $row.Parsed.ToString("yyyy-MM-dd HH:mm:ss") } else { "❌ no-match" }
-    Write-Host ("│ {0,-28} │ {1,-21} │" -f $file, $parsed) -ForegroundColor White
+  Write-Host "┌───────────────────────────────┬───────────────────────┬────────────────────────────┐" -ForegroundColor Yellow
+  Write-Host "│ File                          │ Parsed                │ Pattern                    │" -ForegroundColor Yellow
+  Write-Host "├───────────────────────────────┼───────────────────────┼────────────────────────────┤" -ForegroundColor Yellow
+  for ($i=0; $i -lt $take; $i++) {
+    $f = $files[$i]
+    $nameNoExt = [IO.Path]::GetFileNameWithoutExtension($f.Name)
+    $pat = AutoDetect-DatePattern $nameNoExt $BuiltInPatterns
+    if ($pat) {
+      $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx ([regex]$pat.Rx) -offset ([int]$pat.Offset)
+      $parsed = if ($dt) { $dt.ToString("yyyy-MM-dd HH:mm:ss") } else { "❌ no-match" }
+      $patName = $pat.Name
+    } else {
+      $parsed = "❌ no-match"
+      $patName = "(no pattern)"
+    }
+    $file = (Split-Path $f.FullName -Leaf).PadRight(28)
+    Write-Host ("│ {0} │ {1,-21} │ {2,-26} │" -f $file, $parsed, $patName) -ForegroundColor White
   }
-  Write-Host "└───────────────────────────────┴───────────────────────┘" -ForegroundColor Yellow
+  Write-Host "└───────────────────────────────┴───────────────────────┴────────────────────────────┘" -ForegroundColor Yellow
 }
 
 # Stats
@@ -257,28 +259,35 @@ if (-not $confirm) { Write-Host "Đã hủy."; return }
 Show-Header "Đang cập nhật metadata (exiftool)…"
 $updated = 0
 foreach ($row in $ok) {
-  $tsExif = (Format-Dt $row.Parsed)
-  if ($debugMode) { Write-Host "[DEBUG] Applying timestamp $tsExif to $($row.File)" -ForegroundColor DarkGray }
-  try {
-    & exiftool -overwrite_original -quiet `
-      ("-AllDates=$tsExif") `
-      ("-MediaCreateDate=$tsExif") `
-      ("-TrackCreateDate=$tsExif") `
-      ("-TrackModifyDate=$tsExif") `
-      ("-FileModifyDate=$tsExif") `
-      $row.File | Out-Null
+  $nameNoExt = [IO.Path]::GetFileNameWithoutExtension($row.File)
+  $pat = AutoDetect-DatePattern $nameNoExt $BuiltInPatterns
+  if ($pat) {
+    $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx ([regex]$pat.Rx) -offset ([int]$pat.Offset)
+    $tsExif = (Format-Dt $dt)
+    if ($debugMode) { Write-Host "[DEBUG] Applying timestamp $tsExif to $($row.File)" -ForegroundColor DarkGray }
+    try {
+      & exiftool -overwrite_original -quiet `
+        ("-AllDates=$tsExif") `
+        ("-MediaCreateDate=$tsExif") `
+        ("-TrackCreateDate=$tsExif") `
+        ("-TrackModifyDate=$tsExif") `
+        ("-FileModifyDate=$tsExif") `
+        $row.File | Out-Null
 
-    if ($setFs) {
-      $it = Get-Item -LiteralPath $row.File
-      $it.CreationTime   = $row.Parsed
-      $it.LastWriteTime  = $row.Parsed
-      $it.LastAccessTime = $row.Parsed
-      if ($debugMode) { Write-Host "[DEBUG] Updated filesystem timestamps" -ForegroundColor DarkGray }
+      if ($setFs) {
+        $it = Get-Item -LiteralPath $row.File
+        $it.CreationTime   = $dt
+        $it.LastWriteTime  = $dt
+        $it.LastAccessTime = $dt
+        if ($debugMode) { Write-Host "[DEBUG] Updated filesystem timestamps" -ForegroundColor DarkGray }
+      }
+      $updated++
+      Write-Host ("✔ $($row.File)") -ForegroundColor Green
+    } catch {
+      Write-Host ("✗ $($row.File) — $($_.Exception.Message)") -ForegroundColor Red
     }
-    $updated++
-    Write-Host ("✔ $($row.File)") -ForegroundColor Green
-  } catch {
-    Write-Host ("✗ $($row.File) — $($_.Exception.Message)") -ForegroundColor Red
+  } else {
+    Write-Host ("✗ $($row.File) — Không detect được pattern!") -ForegroundColor Red
   }
 }
 
