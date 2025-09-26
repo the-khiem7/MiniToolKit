@@ -19,7 +19,7 @@
 # ==========================[ GLOBAL SETTINGS ]========================== #
 $ErrorActionPreference = 'Stop'
 $host.UI.RawUI.WindowTitle = "ExifDateTUI — Rename Metadata by Filename"
-$debugMode = $true   # đổi thành $false nếu muốn tắt log debug
+$debugMode = $false   # đổi thành $false nếu muốn tắt log debug
 
 # =============================[ ASCII ART BANNER ]============================== #
 $banner = @'
@@ -98,6 +98,7 @@ $BuiltInPatterns = @(
 
 # ========================[ CORE: PARSE LOGIC ]========================== #
 function AutoDetect-DatePattern($nameNoExt, $patterns) {
+  if ($debugMode) { Write-Host "[DEBUG] AutoDetect-DatePattern: $nameNoExt" -ForegroundColor DarkGray }
   foreach ($pat in $patterns) {
     $rx = [regex]$pat.Rx
     $offset = [int]$pat.Offset
@@ -178,14 +179,25 @@ if (-not (Test-Path -LiteralPath $path)) { Write-Host "[!] Path không tồn t�
 
 $recurse     = AskYesNo "🔄 Quét đệ quy subfolders?" $true
 $setFs       = AskYesNo "🕒 Đồng bộ luôn Windows timestamps (Creation/Modified/Access)?" $true
-$extInput    = Ask "🗂️ Phần mở rộng cần xử lý (ví dụ: mp4,jpg,heic; Enter = mặc định mp4,jpg,jpeg,png,heic)" "mp4,jpg,jpeg,png,heic"
-$exts        = $extInput.Split(",") | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ }
+
+# Tự động nhận diện phần mở rộng đa phương tiện phổ biến
+$mediaExts = @('jpg','jpeg','png','heic','mp4','mov','avi','mkv','webm','gif','bmp','tiff','wav','mp3','aac','flac','ogg','3gp','mpg','mpeg')
+$exts = $mediaExts
+Write-Host "[INFO] Đang tự động nhận diện các file đa phương tiện: $($exts -join ', ')" -ForegroundColor Cyan
 
 
 
 Show-Header "Quét & Preview"
 $files = Get-ChildItem -LiteralPath $path -File -Recurse:$recurse -ErrorAction SilentlyContinue `
   | Where-Object { $exts -contains $_.Extension.TrimStart('.').ToLower() }
+
+if ($debugMode) {
+  $allFiles = Get-ChildItem -LiteralPath $path -File -Recurse:$recurse -ErrorAction SilentlyContinue
+  Write-Host "[DEBUG] Tổng số file tìm thấy: $($allFiles.Count)" -ForegroundColor DarkGray
+  foreach ($ff in $allFiles) {
+    Write-Host "[DEBUG] File: $($ff.Name) | ext=$($ff.Extension.TrimStart('.').ToLower())" -ForegroundColor DarkGray
+  }
+}
 
 if ($debugMode) {
   Write-Host "[DEBUG] Extensions filter: $($exts -join ', ')" -ForegroundColor DarkGray
@@ -225,10 +237,9 @@ foreach ($f in $files) {
 
 $take = [Math]::Min(20, $files.Count)
 if ($take -gt 0) {
-  Write-Host "\nPreview kết quả parse:" -ForegroundColor Cyan
-  Write-Host "┌───────────────────────────────┬───────────────────────┬────────────────────────────┐" -ForegroundColor Yellow
-  Write-Host "│ File                          │ Parsed                │ Pattern                    │" -ForegroundColor Yellow
-  Write-Host "├───────────────────────────────┼───────────────────────┼────────────────────────────┤" -ForegroundColor Yellow
+  Write-Host "┌──────────────────────────┬───────────────────────┬───────────────────────────────┐" -ForegroundColor Yellow
+  Write-Host "│ Pattern                  │ Parsed                │ File                          │" -ForegroundColor Yellow
+  Write-Host "├──────────────────────────┼───────────────────────┼───────────────────────────────┤" -ForegroundColor Yellow
   for ($i=0; $i -lt $take; $i++) {
     $f = $files[$i]
     $nameNoExt = [IO.Path]::GetFileNameWithoutExtension($f.Name)
@@ -236,15 +247,15 @@ if ($take -gt 0) {
     if ($pat) {
       $dt = Parse-DateFromName -nameNoExt $nameNoExt -rx ([regex]$pat.Rx) -offset ([int]$pat.Offset)
       $parsed = if ($dt) { $dt.ToString("yyyy-MM-dd HH:mm:ss") } else { "❌ no-match" }
-      $patName = $pat.Name
+      $patName = $pat.Name.PadRight(24)
     } else {
       $parsed = "❌ no-match"
-      $patName = "(no pattern)"
+      $patName = "(no pattern)".PadRight(24)
     }
-    $file = (Split-Path $f.FullName -Leaf).PadRight(28)
-    Write-Host ("│ {0} │ {1,-21} │ {2,-26} │" -f $file, $parsed, $patName) -ForegroundColor White
+    $file = (Split-Path $f.FullName -Leaf).PadRight(29)
+    Write-Host ("│ {0} │ {1,-21} │ {2} │" -f $patName, $parsed, $file) -ForegroundColor White
   }
-  Write-Host "└───────────────────────────────┴───────────────────────┴────────────────────────────┘" -ForegroundColor Yellow
+  Write-Host "└──────────────────────────┴───────────────────────┴───────────────────────────────┘" -ForegroundColor Yellow
 }
 
 # Stats
