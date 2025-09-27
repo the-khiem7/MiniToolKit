@@ -1,3 +1,5 @@
+debug.log
+
 # To ignore media files only in a specific folder, e.g., 'media/'
 media/*.jpg
 media/*.jpeg

@@ -124,6 +124,17 @@ $BuiltInPatterns = @(
   @{ Name="IMGYYYYMMDDhhmmss"; Example="IMG20250105220012";
     Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
     Offset=3 }  # bỏ "IMG"
+  @{ Name="Screenshot YYYY-MM-DD hhmmss"; Example="Screenshot 2025-06-29 020900";
+    Rx='(?<year>\d{4})-(?<mon>\d{2})-(?<day>\d{2}) (?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})';
+    Offset=11 }  # bỏ "Screenshot "
+
+  @{ Name="WhatsApp Image YYYY-MM-DD at HH.mm.ss"; Example="WhatsApp Image 2025-09-08 at 16.29.32_d68e1dd3";
+    Rx='(?<year>\d{4})-(?<mon>\d{2})-(?<day>\d{2}) at (?<hour>\d{2})\.(?<minute>\d{2})\.(?<second>\d{2})';
+    Offset=14 }  # bỏ "WhatsApp Image "
+
+  @{ Name="retouch_YYYYMMDDhhmmssXX"; Example="retouch_2025092312491695";
+    Rx='(?<year>\d{4})(?<mon>\d{2})(?<day>\d{2})(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})\d{2}';
+    Offset=8 }  # bỏ "retouch_"
 )
 
 # ========================[ CORE: PARSE LOGIC ]========================== #
